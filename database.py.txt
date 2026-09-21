@@ -1,0 +1,26 @@
+import sqlite3
+
+def init_db():
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+    # Telefonlar jadvalini yaratamiz
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS phones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT,
+            name TEXT,
+            memory TEXT,
+            battery TEXT,
+            color TEXT,
+            condition TEXT,
+            price TEXT,
+            quantity INTEGER,
+            photo TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+if __name__ == '__main__':
+    init_db()
+    print("Ma'lumotlar bazasi muvaffaqiyatli yaratildi!")
