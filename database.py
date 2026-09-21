@@ -9,7 +9,6 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # Do'kon sozlamalari (kanal, filial, lokatsiya)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -17,7 +16,6 @@ def init_db():
         )
     """)
     
-    # Xodimlar jadvali
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS staff (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,11 +24,13 @@ def init_db():
         )
     """)
     
-    # Mahsulotlar jadvali
+    # subcategory (Yangi/BU) va model ustunlari qo'shildi
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             category TEXT,
+            subcategory TEXT,
+            model TEXT,
             name TEXT,
             memory TEXT,
             battery TEXT,
@@ -42,7 +42,6 @@ def init_db():
         )
     """)
     
-    # Obunachi mijozlar
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY
@@ -67,7 +66,6 @@ def get_setting(key):
     conn.close()
     return row["value"] if row else None
 
-# Xodimlar
 def add_staff(name, phone):
     conn = get_db()
     cursor = conn.cursor()
@@ -90,14 +88,14 @@ def delete_staff(staff_id):
     conn.commit()
     conn.close()
 
-# Mahsulotlar
-def add_product(category, name, memory, battery, color, condition, price, quantity, photo_id):
+# Mahsulot funksiyalari yangilandi
+def add_product(category, subcategory, model, name, memory, battery, color, condition, price, quantity, photo_id):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO products (category, name, memory, battery, color, condition, price, quantity, photo_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (category, name, memory, battery, color, condition, price, quantity, photo_id))
+        INSERT INTO products (category, subcategory, model, name, memory, battery, color, condition, price, quantity, photo_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (category, subcategory, model, name, memory, battery, color, condition, price, quantity, photo_id))
     conn.commit()
     conn.close()
 
@@ -105,6 +103,14 @@ def get_products_by_category(category):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM products WHERE category = ?", (category,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_products_by_model(category, subcategory, model):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM products WHERE category = ? AND subcategory = ? AND model = ?", (category, subcategory, model))
     rows = cursor.fetchall()
     conn.close()
     return rows
@@ -123,3 +129,11 @@ def delete_product(product_id):
     cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
     conn.commit()
     conn.close()
+
+def get_all_users():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
