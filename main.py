@@ -3,7 +3,7 @@ import asyncio
 import logging
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -14,14 +14,24 @@ import database as db
 TOKEN = "8582520793:AAEJw65DPp780yky_wZHlKFyIQJNkJ3GowM"
 
 # Vakolatlar
-SUPER_ADMIN_ID = 6738533029  # To'liq boshqaruv
-PRODUCT_ADMIN_ID = 5156453500  # Faqat mahsulot boshqaruvi
+SUPER_ADMIN_ID = 6738533029
+PRODUCT_ADMIN_ID = 5156453500
+
+IPHONE_MODELS = [
+    "iPhone 11", "iPhone 11 Pro", "iPhone 11 Pro Max",
+    "iPhone 12", "iPhone 12 Pro", "iPhone 12 Pro Max",
+    "iPhone 13", "iPhone 13 Pro", "iPhone 13 Pro Max",
+    "iPhone 14", "iPhone 14 Plus", "iPhone 14 Pro", "iPhone 14 Pro Max",
+    "iPhone 15", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max",
+    "iPhone 16", "iPhone 16 Plus", "iPhone 16 Pro", "iPhone 16 Pro Max",
+    "iPhone 17", "iPhone 17 Air", "iPhone 17 Pro", "iPhone 17 Pro Max",
+    "iPhone 18", "iPhone 18 Air", "iPhone 18 Pro", "iPhone 18 Pro Max"
+]
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# FSM Holatlari
 class SuperAdminState(StatesGroup):
     channel = State()
     branch_name = State()
@@ -31,6 +41,8 @@ class SuperAdminState(StatesGroup):
 
 class ProductState(StatesGroup):
     category = State()
+    subcategory = State()
+    model = State()
     name = State()
     memory = State()
     battery = State()
@@ -76,6 +88,18 @@ def get_cancel_menu():
     builder.button(text="❌ Bekor qilish")
     return builder.as_markup(resize_keyboard=True)
 
+def format_product_caption(p):
+    return (
+        f"📱 <b>{p['name']}</b>\n"
+        f"💾 Xotira: {p['memory']}\n"
+        f"🔋 Battery: {p['battery']}\n"
+        f"🎨 Rangi: {p['color']}\n"
+        f"🛠 Holati: {p['condition']}\n"
+        f"💰 Narxi: {p['price']}\n"
+        f"📦 Qoldiq: {p['quantity']} ta\n\n"
+        f"❗️ <b>Kelishadigan joyi bor</b> ❗️"
+    )
+
 # --- BEKOR QILISH VA BOSH MENYU ---
 @dp.message(F.text.in_(["❌ Bekor qilish", "🔙 Bosh menyuga qaytish"]))
 async def cancel_action(message: types.Message, state: FSMContext):
@@ -102,26 +126,58 @@ async def show_categories(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Kategoriyani tanlang:", reply_markup=get_category_menu())
 
-@dp.message(F.text.in_(["📱 iPhone", "📱 Samsung", "📱 HONOR", "📱 Redmi", "🎧 Aksessuarlar"]))
+# iPhone uchun maxsus ko'rish oqimi
+@dp.message(F.text == "📱 iPhone")
+async def show_iphone_subcategories(message: types.Message, state: FSMContext):
+    await state.clear()
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Yangi", callback_data="viewsub_Yangi")
+    builder.button(text="B/U", callback_data="viewsub_BU")
+    builder.adjust(2)
+    await message.answer("Holatini tanlang:", reply_markup=builder.as_markup())
+
+@dp.callback_query(F.data.startswith("viewsub_"))
+async def show_iphone_models(call: types.CallbackQuery):
+    subcat = call.data.split("_")[1]
+    builder = InlineKeyboardBuilder()
+    for idx, model in enumerate(IPHONE_MODELS):
+        builder.button(text=model, callback_data=f"viewmod_{subcat}_{idx}")
+    builder.adjust(2)
+    await call.message.edit_text(f"{subcat} iPhone modellarini tanlang:", reply_markup=builder.as_markup())
+    await call.answer()
+
+@dp.callback_query(F.data.startswith("viewmod_"))
+async def show_iphone_final(call: types.CallbackQuery):
+    data = call.data.split("_")
+    subcat = data[1]
+    model = IPHONE_MODELS[int(data[2])]
+    products = db.get_products_by_model("iPhone", subcat, model)
+    
+    if not products:
+        await call.message.answer(f"Hozircha <b>{model} ({subcat})</b> bo'yicha mahsulot yo'q. Tez orada qo'shiladi ⏳", parse_mode="HTML")
+        await call.answer()
+        return
+
+    for p in products:
+        caption = format_product_caption(p)
+        if p['photo_id'] and p['photo_id'] != "none":
+            await call.message.answer_photo(photo=p['photo_id'], caption=caption, parse_mode="HTML")
+        else:
+            await call.message.answer(caption, parse_mode="HTML")
+    await call.answer()
+
+# Boshqa kategoriyalar ko'rish oqimi
+@dp.message(F.text.in_(["📱 Samsung", "📱 HONOR", "📱 Redmi", "🎧 Aksessuarlar"]))
 async def show_category_products(message: types.Message, state: FSMContext):
     await state.clear()
     cat_name = message.text.replace("📱 ", "").replace("🎧 ", "")
     products = db.get_products_by_category(cat_name)
     if not products:
-        await message.answer(f"Hozircha <b>{cat_name}</b> bo'limida mahsulot yo'q.", parse_mode="HTML")
+        await message.answer(f"Hozircha <b>{cat_name}</b> bo'limida mahsulot yo'q. Tez orada qo'shiladi ⏳", parse_mode="HTML")
         return
 
     for p in products:
-        caption = (
-            f"📱 <b>{p['name']}</b>\n"
-            f"💾 Xotira: {p['memory']}\n"
-            f"🔋 Battery: {p['battery']}\n"
-            f"🎨 Rangi: {p['color']}\n"
-            f"🛠 Holati: {p['condition']}\n"
-            f"💰 Narxi: {p['price']}\n"
-            f"📦 Qoldiq: {p['quantity']} ta\n\n"
-            f"❗️ <b>Kelishadigan joyi bor</b> ❗️"
-        )
+        caption = format_product_caption(p)
         if p['photo_id'] and p['photo_id'] != "none":
             await message.answer_photo(photo=p['photo_id'], caption=caption, parse_mode="HTML")
         else:
@@ -162,7 +218,7 @@ async def show_staff(message: types.Message, state: FSMContext):
         text += f"👤 <b>{s['name']}</b>\n📞 Tel: {s['phone']}\n\n"
     await message.answer(text, parse_mode="HTML")
 
-# --- SUPER ADMIN (ID: 6738533029) ---
+# --- SUPER ADMIN PANELI ---
 @dp.message(F.text == "👑 Super Admin Paneli")
 async def super_admin_panel(message: types.Message, state: FSMContext):
     await state.clear()
@@ -251,7 +307,7 @@ async def sa_del_staff_confirm(call: types.CallbackQuery):
     db.delete_staff(int(call.data.split("_")[1]))
     await call.message.edit_text("✅ Xodim o'chirildi!")
 
-# --- MAHSULOTLAR PANELI (ID: 5156453500 va 6738533029) ---
+# --- MAHSULOTLAR PANELI ---
 @dp.message(F.text == "⚙️ Mahsulotlar Paneli")
 async def prod_panel_open(message: types.Message, state: FSMContext):
     await state.clear()
@@ -280,8 +336,43 @@ async def pr_add_start(call: types.CallbackQuery, state: FSMContext):
 @dp.message(ProductState.category)
 async def pr_cat(message: types.Message, state: FSMContext):
     await state.update_data(category=message.text)
-    await message.answer("Mahsulot nomini kiriting:", reply_markup=get_cancel_menu())
+    
+    if message.text == "iPhone":
+        builder = InlineKeyboardBuilder()
+        builder.button(text="Yangi", callback_data="prsub_Yangi")
+        builder.button(text="B/U", callback_data="prsub_BU")
+        builder.adjust(2)
+        await message.answer("Holatini tanlang:", reply_markup=builder.as_markup())
+        await state.set_state(ProductState.subcategory)
+    else:
+        await state.update_data(subcategory=None, model=None)
+        await message.answer("Mahsulot nomini kiriting:", reply_markup=get_cancel_menu())
+        await state.set_state(ProductState.name)
+
+@dp.callback_query(ProductState.subcategory, F.data.startswith("prsub_"))
+async def pr_subcat(call: types.CallbackQuery, state: FSMContext):
+    subcat = call.data.split("_")[1]
+    await state.update_data(subcategory=subcat)
+    
+    builder = InlineKeyboardBuilder()
+    for idx, model in enumerate(IPHONE_MODELS):
+        builder.button(text=model, callback_data=f"prmod_{idx}")
+    builder.adjust(2)
+    
+    await call.message.edit_text("Modelni tanlang:", reply_markup=builder.as_markup())
+    await state.set_state(ProductState.model)
+    await call.answer()
+
+@dp.callback_query(ProductState.model, F.data.startswith("prmod_"))
+async def pr_model(call: types.CallbackQuery, state: FSMContext):
+    idx = int(call.data.split("_")[1])
+    model = IPHONE_MODELS[idx]
+    await state.update_data(model=model)
+    
+    await call.message.delete()
+    await call.message.answer(f"Siz {model} tanladingiz.\nTo'liq nomini kiriting (masalan, iPhone 15 Pro Max 256GB):", reply_markup=get_cancel_menu())
     await state.set_state(ProductState.name)
+    await call.answer()
 
 @dp.message(ProductState.name)
 async def pr_name(message: types.Message, state: FSMContext):
@@ -304,13 +395,13 @@ async def pr_bat(message: types.Message, state: FSMContext):
 @dp.message(ProductState.color)
 async def pr_col(message: types.Message, state: FSMContext):
     await state.update_data(color=message.text)
-    await message.answer("Holatini kiriting:")
+    await message.answer("Holatini kiriting (masalan, Ideal):")
     await state.set_state(ProductState.condition)
 
 @dp.message(ProductState.condition)
 async def pr_cond(message: types.Message, state: FSMContext):
     await state.update_data(condition=message.text)
-    await message.answer("Narxini kiriting:")
+    await message.answer("Narxini kiriting (masalan, $1000):")
     await state.set_state(ProductState.price)
 
 @dp.message(ProductState.price)
@@ -327,21 +418,49 @@ async def pr_qty(message: types.Message, state: FSMContext):
         await message.answer("Faqat raqam kiriting:")
         return
     await state.update_data(quantity=q)
-    await message.answer("Rasmini yuboring:")
+    await message.answer("Rasmini yuboring (yoki rasm yo'q bo'lsa biron nima yozing):")
     await state.set_state(ProductState.photo)
 
 @dp.message(ProductState.photo)
 async def pr_photo(message: types.Message, state: FSMContext):
-    if not message.photo:
-        await message.answer("Iltimos, rasm yuboring:")
-        return
+    photo_id = message.photo[-1].file_id if message.photo else "none"
+    
     data = await state.get_data()
     db.add_product(
-        category=data['category'], name=data['name'], memory=data['memory'],
-        battery=data['battery'], color=data['color'], condition=data['condition'],
-        price=data['price'], quantity=data['quantity'], photo_id=message.photo[-1].file_id
+        category=data['category'], 
+        subcategory=data.get('subcategory'), 
+        model=data.get('model'),
+        name=data['name'], 
+        memory=data['memory'],
+        battery=data['battery'], 
+        color=data['color'], 
+        condition=data['condition'],
+        price=data['price'], 
+        quantity=data['quantity'], 
+        photo_id=photo_id
     )
-    await message.answer("✅ Mahsulot qo'shildi!", reply_markup=get_main_menu(message.from_user.id))
+    
+    await message.answer("✅ Mahsulot bazaga qo'shildi!", reply_markup=get_main_menu(message.from_user.id))
+    
+    # SMS (BROADCAST) YUBORISH QISMI
+    users = db.get_all_users()
+    if users:
+        broadcast_msg = (
+            f"🔔 <b>Yangi mahsulot keldi!</b>\n\n"
+            f"📱 <b>{data['name']}</b>\n"
+            f"💰 Narxi: {data['price']}\n\n"
+            f"<i>Katalogimizga kirib to'liq tanishib chiqing!</i>"
+        )
+        for u in users:
+            try:
+                if photo_id != "none":
+                    await bot.send_photo(u['user_id'], photo=photo_id, caption=broadcast_msg, parse_mode="HTML")
+                else:
+                    await bot.send_message(u['user_id'], text=broadcast_msg, parse_mode="HTML")
+                await asyncio.sleep(0.05)
+            except Exception as e:
+                pass
+
     await state.clear()
 
 @dp.callback_query(F.data == "pr_del")
@@ -352,7 +471,7 @@ async def pr_del_list(call: types.CallbackQuery):
         return
     builder = InlineKeyboardBuilder()
     for p in prods:
-        builder.button(text=f"❌ {p['name']}", callback_data=f"delp_{p['id']}")
+        builder.button(text=f"❌ {p['name']} ({p['price']})", callback_data=f"delp_{p['id']}")
     builder.adjust(1)
     await call.message.answer("O'chirish uchun tanlang:", reply_markup=builder.as_markup())
     await call.answer()
