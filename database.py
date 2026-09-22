@@ -24,7 +24,6 @@ def init_db():
         )
     """)
     
-    # subcategory (Yangi/BU) va model ustunlari qo'shildi
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +50,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+# --- SOZLAMALAR VA XODIMLAR ---
 def set_setting(key, value):
     conn = get_db()
     cursor = conn.cursor()
@@ -88,7 +88,7 @@ def delete_staff(staff_id):
     conn.commit()
     conn.close()
 
-# Mahsulot funksiyalari yangilandi
+# --- MAHSULOTLAR ---
 def add_product(category, subcategory, model, name, memory, battery, color, condition, price, quantity, photo_id):
     conn = get_db()
     cursor = conn.cursor()
@@ -103,6 +103,14 @@ def get_products_by_category(category):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM products WHERE category = ?", (category,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_products_by_subcategory(category, subcategory):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM products WHERE category = ? AND subcategory = ?", (category, subcategory))
     rows = cursor.fetchall()
     conn.close()
     return rows
@@ -130,6 +138,14 @@ def delete_product(product_id):
     conn.commit()
     conn.close()
 
+# --- FOYDALANUVCHILAR VA STATISTIKA ---
+def add_user(user_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+    conn.commit()
+    conn.close()
+
 def get_all_users():
     conn = get_db()
     cursor = conn.cursor()
@@ -137,3 +153,11 @@ def get_all_users():
     rows = cursor.fetchall()
     conn.close()
     return rows
+
+def get_users_count():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
