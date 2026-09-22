@@ -556,6 +556,10 @@ async def start_web_server():
 async def main():
     db.init_db()
     await start_web_server()
+    
+    # TELEGRAM WEBHOOK XATOSINI TO'G'RILASH UCHUN
+    await bot.delete_webhook(drop_pending_updates=True)
+    
     print("Bot va Server ishga tushdi...")
     await dp.start_polling(bot)
 
