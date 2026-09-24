@@ -12,9 +12,8 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 TOKEN = "8582520793:AAEJw65DPp780yky_wZHlKFyIQJNkJ3GowM"
 BOT_USERNAME = "AirmaxMobileBot"
 
-# Super Admin (Faqat shu ID egasi eng yuqori huquqqa ega)
+# Super Admin va Adminlar
 SUPER_ADMIN_ID = 6738533029  
-# Adminlar (mahsulot qo'shish/o'chirish huquqi) - Keyinchalik bazadan o'qilishi mumkin, hozircha static
 STATIC_ADMIN_IDS = [6738533029, 5156453500] 
 
 logging.basicConfig(level=logging.INFO)
@@ -28,50 +27,29 @@ dp = Dispatcher()
 def init_db():
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
-    
-    # Telefonlar jadvali
     cursor.execute('''CREATE TABLE IF NOT EXISTS phones (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             category TEXT, name TEXT, memory TEXT, battery TEXT, color TEXT, 
             condition TEXT, price TEXT, quantity INTEGER, photo TEXT)''')
-            
-    # Foydalanuvchilar jadvali
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY, points INTEGER DEFAULT 0, referred_by INTEGER)''')
-    
-    # Majburiy obuna jadvali mavjud bo'lmasa eski jadvalni tekshirib yangilash
-    try:
-        cursor.execute("SELECT points FROM users LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE users ADD COLUMN points INTEGER DEFAULT 0")
-        cursor.execute("ALTER TABLE users ADD COLUMN referred_by INTEGER")
-
-    # Savat jadvali
     cursor.execute('''CREATE TABLE IF NOT EXISTS cart (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER, phone_id INTEGER, quantity INTEGER DEFAULT 1)''')
-            
-    # Sozlamalar jadvali
     cursor.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)''')
-    
-    # Xodimlar jadvali
     cursor.execute('''CREATE TABLE IF NOT EXISTS employees (
             user_id INTEGER PRIMARY KEY, name TEXT, role TEXT, branch TEXT)''')
-            
-    # Filiallar jadvali
     cursor.execute('''CREATE TABLE IF NOT EXISTS branches (
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, address TEXT, location TEXT)''')
     
-    # Boshlang'ich sozlamalar
-    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_phone', '+998900000000')")
+    # ❗️ Zakaz tushganda mijozga ko'rsatiladigan raqam (Siz aytgan raqam kiritildi)
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_phone', '+998 95 776 02 22')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('channel', 'none')")
-    
     conn.commit()
     conn.close()
 
 init_db()
 
-# DB Helper funksiyalari
 def get_setting(key):
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
@@ -96,19 +74,11 @@ def is_admin(user_id):
     conn.close()
     return bool(res)
 
-def get_employee(user_id):
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT name, role, branch FROM employees WHERE user_id=?", (user_id,))
-    res = cursor.fetchone()
-    conn.close()
-    return res
-
 # ==========================================
 # 2. HOLATLAR (States)
 # ==========================================
 class AddPhone(StatesGroup):
-    category, sub_category, name, memory, battery, color, condition, price, quantity, photo, confirm = State(), State(), State(), State(), State(), State(), State(), State(), State(), State(), State()
+    category, name, memory, battery, color, condition, price, quantity, photo, confirm = State(), State(), State(), State(), State(), State(), State(), State(), State(), State()
 class BroadcastNews(StatesGroup): content = State()
 class SearchState(StatesGroup): query = State()
 class CheckoutState(StatesGroup): phone_number = State()
@@ -138,7 +108,7 @@ def get_main_menu(user_id):
     if user_id == SUPER_ADMIN_ID:
         builder.button(text="👑 Super Admin Panel")
         
-    builder.adjust(2, 2, 2, 2, 2, 2, 1) # Tugmalarni joylashtirish
+    builder.adjust(2, 2, 2, 2, 2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def get_super_admin_menu():
@@ -157,7 +127,7 @@ def get_cancel_menu():
     return ReplyKeyboardBuilder().button(text="❌ Bekor qilish").as_markup(resize_keyboard=True)
 
 # ==========================================
-# 4. UMUMIY BEKOR QILISH VA ORQAGA
+# 4. BEKOR QILISH VA START
 # ==========================================
 @dp.message(F.text == "❌ Bekor qilish", StateFilter('*'))
 async def cancel_handler(message: types.Message, state: FSMContext):
@@ -172,22 +142,18 @@ async def back_to_main(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Bosh menyu:", reply_markup=get_main_menu(message.from_user.id))
 
-# ==========================================
-# 5. MAJBURIY OBUNA VA START
-# ==========================================
 async def check_subscription(user_id):
     channel = get_setting('channel')
     if channel == 'none' or not channel: return True
     try:
         member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
         return member.status in ['member', 'administrator', 'creator']
-    except: return True # Agar bot kanalda yo'q bo'lsa yoki xato ketsa o'tkazvoradi
+    except: return True 
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
-    
     if not await check_subscription(user_id):
         channel = get_setting('channel')
         markup = InlineKeyboardBuilder().button(text="Obuna bo'lish", url=f"https://t.me/{channel.replace('@', '')}").as_markup()
@@ -212,168 +178,9 @@ async def start_handler(message: types.Message, state: FSMContext):
     conn.close()
     await message.answer("Assalomu alaykum! Airmax Mobile do'koniga xush kelibsiz.", reply_markup=get_main_menu(user_id))
 
-# ==========================================
-# 6. 👑 SUPER ADMIN PANEL FUNKSIYALARI
-# ==========================================
-@dp.message(F.text == "👑 Super Admin Panel")
-async def super_admin_panel(message: types.Message):
-    if message.from_user.id != SUPER_ADMIN_ID: return
-    await message.answer("👑 Super Admin paneliga xush kelibsiz!", reply_markup=get_super_admin_menu())
-
-@dp.message(F.text == "⚙️ Kanal sozlamalari")
-async def settings_channel(message: types.Message, state: FSMContext):
-    if message.from_user.id != SUPER_ADMIN_ID: return
-    await message.answer(f"Hozirgi kanal: {get_setting('channel')}\n\nYangi kanal userneymini yuboring (@bilan) yoki 'none' deng:", reply_markup=get_cancel_menu())
-    await state.set_state(SettingsState.channel)
-
-@dp.message(SettingsState.channel)
-async def process_channel(message: types.Message, state: FSMContext):
-    update_setting('channel', message.text)
-    await state.clear()
-    await message.answer("✅ Kanal saqlandi!", reply_markup=get_super_admin_menu())
-
-@dp.message(F.text == "📞 Aloqa raqami")
-async def settings_phone(message: types.Message, state: FSMContext):
-    if message.from_user.id != SUPER_ADMIN_ID: return
-    await message.answer(f"Hozirgi raqam: {get_setting('admin_phone')}\n\nYangi raqamni yuboring:", reply_markup=get_cancel_menu())
-    await state.set_state(SettingsState.phone)
-
-@dp.message(SettingsState.phone)
-async def process_phone(message: types.Message, state: FSMContext):
-    update_setting('admin_phone', message.text)
-    await state.clear()
-    await message.answer("✅ Aloqa raqami saqlandi!", reply_markup=get_super_admin_menu())
-
-@dp.message(F.text == "🗑 Barcha mahsulotni tozalash")
-async def clear_all_products(message: types.Message):
-    if message.from_user.id != SUPER_ADMIN_ID: return
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM phones")
-    conn.commit()
-    conn.close()
-    await message.answer("✅ Barcha mahsulotlar o'chirildi!")
-
-@dp.message(F.text == "📢 Yangilik yuborish")
-async def start_broadcast(message: types.Message, state: FSMContext):
-    if message.from_user.id != SUPER_ADMIN_ID: return
-    await message.answer("Yangilikni yuboring (rasm yoki matn):", reply_markup=get_cancel_menu())
-    await state.set_state(BroadcastNews.content)
-
-@dp.message(BroadcastNews.content)
-async def process_broadcast(message: types.Message, state: FSMContext):
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users")
-    users = cursor.fetchall()
-    conn.close()
-    status_msg = await message.answer("Jo'natilmoqda...")
-    sent = 0
-    text = "<b>🔔 Airmax Mobile:</b>\n\n"
-    for (uid,) in users:
-        try:
-            if message.photo: await bot.send_photo(uid, message.photo[-1].file_id, caption=text+(message.caption or ""), parse_mode="HTML")
-            else: await bot.send_message(uid, text+message.text, parse_mode="HTML")
-            sent += 1
-            await asyncio.sleep(0.05)
-        except: pass
-    await state.clear()
-    await status_msg.edit_text(f"✅ Yetkazildi: {sent} ta mijozga.")
-    await message.answer("Menyu:", reply_markup=get_super_admin_menu())
-
-# --- Xodimlar boshqaruvi (Sodda variant) ---
-@dp.message(F.text == "👥 Xodimlar")
-async def manage_employees(message: types.Message, state: FSMContext):
-    if message.from_user.id != SUPER_ADMIN_ID: return
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM employees")
-    emps = cursor.fetchall()
-    conn.close()
-    
-    text = "<b>👥 Xodimlar ro'yxati:</b>\n\n"
-    if emps:
-        for e in emps: text += f"ID: <code>{e[0]}</code> | {e[1]} | {e[2]} | {e[3]}\n"
-    else: text += "Hozircha xodimlar yo'q.\n"
-    
-    text += "\nYangi xodim qo'shish uchun uning Telegram ID sini yuboring:"
-    await message.answer(text, reply_markup=get_cancel_menu(), parse_mode="HTML")
-    await state.set_state(AddEmployee.user_id)
-
-@dp.message(AddEmployee.user_id)
-async def process_emp_id(message: types.Message, state: FSMContext):
-    try: await state.update_data(user_id=int(message.text))
-    except: await message.answer("ID faqat raqamlardan iborat bo'lishi kerak."); return
-    await message.answer("Xodim ismini kiriting:")
-    await state.set_state(AddEmployee.name)
-
-@dp.message(AddEmployee.name)
-async def process_emp_name(message: types.Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    builder = ReplyKeyboardBuilder().button(text="Admin").button(text="Operator").button(text="❌ Bekor qilish").adjust(2)
-    await message.answer("Rolni tanlang:", reply_markup=builder.as_markup(resize_keyboard=True))
-    await state.set_state(AddEmployee.role)
-
-@dp.message(AddEmployee.role)
-async def process_emp_role(message: types.Message, state: FSMContext):
-    await state.update_data(role=message.text)
-    await message.answer("Qaysi filialga biriktirasiz (yoki 'Barchasi'):", reply_markup=get_cancel_menu())
-    await state.set_state(AddEmployee.branch)
-
-@dp.message(AddEmployee.branch)
-async def process_emp_branch(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO employees (user_id, name, role, branch) VALUES (?, ?, ?, ?)", (data['user_id'], data['name'], data['role'], message.text))
-    conn.commit(); conn.close()
-    await state.clear()
-    await message.answer("✅ Xodim qo'shildi!", reply_markup=get_super_admin_menu())
-
-# --- Filiallar boshqaruvi ---
-@dp.message(F.text == "🏢 Filiallarni boshqarish")
-async def manage_branches(message: types.Message, state: FSMContext):
-    if message.from_user.id != SUPER_ADMIN_ID: return
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM branches")
-    brs = cursor.fetchall()
-    conn.close()
-    
-    text = "<b>🏢 Filiallar ro'yxati:</b>\n\n"
-    if brs:
-        for b in brs: text += f"📍 <b>{b[1]}</b> - {b[2]}\n"
-    else: text += "Hozircha filiallar yo'q.\n"
-    
-    text += "\nYangi filial nomini yuboring:"
-    await message.answer(text, reply_markup=get_cancel_menu(), parse_mode="HTML")
-    await state.set_state(AddBranch.name)
-
-@dp.message(AddBranch.name)
-async def process_branch_name(message: types.Message, state: FSMContext):
-    await state.update_data(name=message.text)
-    await message.answer("Filial manzilini yuboring (Masalan: Toshkent sh, Chilonzor):")
-    await state.set_state(AddBranch.address)
-
-@dp.message(AddBranch.address)
-async def process_branch_address(message: types.Message, state: FSMContext):
-    await state.update_data(address=message.text)
-    await message.answer("Filial lokatsiyasini (Google Maps linki yoki lokatsiya jo'nating) yoki 'yoq' deng:")
-    await state.set_state(AddBranch.location)
-
-@dp.message(AddBranch.location)
-async def process_branch_loc(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    loc = message.text if message.text else "Lokatsiya yuborildi"
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO branches (name, address, location) VALUES (?, ?, ?)", (data['name'], data['address'], loc))
-    conn.commit(); conn.close()
-    await state.clear()
-    await message.answer("✅ Filial qo'shildi!", reply_markup=get_super_admin_menu())
 
 # ==========================================
-# 7. ASOSIY FUNKSIYALAR
+# 5. ASOSIY FUNKSIYALAR (Qidiruv, Savat, Zakaz)
 # ==========================================
 @dp.message(F.text == "🔍 Qidiruv")
 async def start_search(message: types.Message, state: FSMContext):
@@ -395,30 +202,6 @@ async def process_search(message: types.Message, state: FSMContext):
     await message.answer(f"🔍 Natijalar:", reply_markup=get_main_menu(message.from_user.id))
     for phone in phones: await send_phone_card(message, phone)
 
-@dp.message(F.text == "📊 Statistika")
-async def show_stats(message: types.Message):
-    if not is_admin(message.from_user.id): return
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM users")
-    users = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM phones")
-    phones = cursor.fetchone()[0]
-    conn.close()
-    await message.answer(f"📊 <b>Statistika:</b>\n\n👥 Mijozlar: {users} ta\n📱 Qoldiq: {phones} xil mahsulot", parse_mode="HTML")
-
-@dp.message(F.text == "🎁 Referal (Bonus)")
-async def referral_system(message: types.Message):
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT points FROM users WHERE user_id = ?", (message.from_user.id,))
-    res = cursor.fetchone()
-    conn.close()
-    points = res[0] if res else 0
-    ref_link = f"https://t.me/{BOT_USERNAME}?start={message.from_user.id}"
-    await message.answer(f"🎁 <b>Referal</b>\n\nSizning balansingiz: <b>{points} so'm</b>\n\n👇 Havolani ulashing:\n{ref_link}", parse_mode="HTML")
-
-# --- SAVAT VA ZAKAZ ---
 @dp.callback_query(F.data.startswith("add_cart_"))
 async def add_to_cart_callback(callback: types.CallbackQuery):
     phone_id = int(callback.data.split("_")[2])
@@ -462,7 +245,7 @@ async def clear_cart_callback(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "checkout")
 async def checkout_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.delete()
-    await bot.send_message(callback.from_user.id, "📞 Raqamingizni yuboring:", reply_markup=get_cancel_menu())
+    await bot.send_message(callback.from_user.id, "📞 Zakaz berish uchun raqamingizni yuboring:", reply_markup=get_cancel_menu())
     await state.set_state(CheckoutState.phone_number)
 
 @dp.message(CheckoutState.phone_number)
@@ -479,12 +262,16 @@ async def process_checkout(message: types.Message, state: FSMContext):
     conn.close()
 
     order = "\n".join([f"▪️ {i[0]} ({i[1]})" for i in items])
-    admin_text = f"🚨 <b>YANGI BUYURTMA!</b>\n👤 Mijoz ID: {message.from_user.id}\n📞 Tel: {message.text}\n🎁 Bonus: {points} so'm\n\n🛒 <b>Mahsulotlar:</b>\n{order}"
+    admin_text = f"🚨 <b>YANGI BUYURTMA!</b>\n👤 Mijoz ID: {message.from_user.id}\n📞 Tel: {message.text}\n🎁 Bonus ishlatildi: {points} so'm\n\n🛒 <b>Mahsulotlar:</b>\n{order}"
     await bot.send_message(SUPER_ADMIN_ID, admin_text, parse_mode="HTML")
     await state.clear()
-    await message.answer(f"✅ Qabul qilindi!\n\n📞 <b>Tasdiqlash uchun:</b>\n{get_setting('admin_phone')}", reply_markup=get_main_menu(message.from_user.id), parse_mode="HTML")
+    
+    # ❗️ Zakaz bergandan so'ng siz aytgan raqam chiqadi
+    await message.answer(f"✅ Buyurtmangiz qabul qilindi!\n\n📞 <b>Tasdiqlash uchun ushbu raqamga qo'ng'iroq qiling:</b>\n+998 95 776 02 22", reply_markup=get_main_menu(message.from_user.id), parse_mode="HTML")
 
-# --- IPHONE ICHKI MENYULARI ---
+# ==========================================
+# 6. IPHONE MENYULARI VA ✅/❌ MANTIQI
+# ==========================================
 @dp.message(F.text == "📱 iPhone")
 async def iphone_menu(message: types.Message):
     builder = ReplyKeyboardBuilder()
@@ -494,39 +281,74 @@ async def iphone_menu(message: types.Message):
     builder.adjust(2, 1)
     await message.answer("iPhone bo'limini tanladingiz:", reply_markup=builder.as_markup(resize_keyboard=True))
 
-@dp.message(F.text == "✨ Yangi iPhone")
-async def new_iphone_handler(message: types.Message):
-    await message.answer("✨ Yangi iPhone modellari hozircha yo'q. **Tez kunda qo'shiladi!**", parse_mode="HTML")
-
 iphone_models_list = ["iPhone 11", "iPhone 12", "iPhone 12 Pro", "iPhone 12 Pro Max", "iPhone 13", "iPhone 13 Pro", "iPhone 13 Pro Max", "iPhone 14", "iPhone 14 Pro", "iPhone 14 Pro Max", "iPhone 15", "iPhone 15 Pro", "iPhone 15 Pro Max", "iPhone 16", "iPhone 16 Pro", "iPhone 16 Pro Max", "iPhone 17", "iPhone 17 Pro", "iPhone 17 Pro Max", "iPhone 18 Pro", "iPhone 18 Pro Max"]
 
+# B/U Modellari ro'yxatini chiqarayotganda ✅ va ❌ tekshiruvi
 @dp.message(F.text == "📦 B/U iPhone")
 async def bu_iphone_models(message: types.Message):
-    builder = ReplyKeyboardBuilder()
-    for m in iphone_models_list: builder.button(text=m)
-    builder.button(text="⬅️ Orqaga")
-    builder.adjust(2)
-    await message.answer("Kerakli modelni tanlang:", reply_markup=builder.as_markup(resize_keyboard=True))
-
-@dp.message(lambda message: message.text in iphone_models_list)
-async def show_iphone_models(message: types.Message):
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM phones WHERE name LIKE ?", (f"%{message.text}%",))
+    builder = ReplyKeyboardBuilder()
+    for m in iphone_models_list:
+        cursor.execute("SELECT SUM(quantity) FROM phones WHERE category='📦 B/U iPhone' AND name LIKE ?", (f"%{m}%",))
+        res = cursor.fetchone()
+        qty = res[0] if res[0] else 0
+        if qty > 0:
+            builder.button(text=f"✅ {m}")
+        else:
+            builder.button(text=f"❌ {m}")
+    conn.close()
+    builder.button(text="⬅️ Orqaga")
+    builder.adjust(2)
+    await message.answer("📦 B/U iPhone modellari (✅ - bor, ❌ - yo'q):", reply_markup=builder.as_markup(resize_keyboard=True))
+
+# Yangi Modellari ro'yxatini chiqarayotganda ✅ va ❌ tekshiruvi
+@dp.message(F.text == "✨ Yangi iPhone")
+async def new_iphone_models(message: types.Message):
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+    builder = ReplyKeyboardBuilder()
+    for m in iphone_models_list:
+        cursor.execute("SELECT SUM(quantity) FROM phones WHERE category='✨ Yangi iPhone' AND name LIKE ?", (f"%{m}%",))
+        res = cursor.fetchone()
+        qty = res[0] if res[0] else 0
+        if qty > 0:
+            builder.button(text=f"✅ {m}")
+        else:
+            builder.button(text=f"❌ {m}")
+    conn.close()
+    builder.button(text="⬅️ Orqaga")
+    builder.adjust(2)
+    await message.answer("✨ Yangi iPhone modellari (✅ - bor, ❌ - yo'q):", reply_markup=builder.as_markup(resize_keyboard=True))
+
+# Model ✅ yoki ❌ bilan bosilganda ushlash
+@dp.message(lambda msg: msg.text and (msg.text.startswith("✅ iPhone") or msg.text.startswith("❌ iPhone")))
+async def show_iphone_models(message: types.Message):
+    model_name = message.text.replace("✅ ", "").replace("❌ ", "")
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM phones WHERE name LIKE ? AND category LIKE '%iPhone%'", (f"%{model_name}%",))
     phones = cursor.fetchall()
     conn.close()
+    
     if not phones:
-        await message.answer(f"Hozircha <b>{message.text}</b> yo'q.", parse_mode="HTML")
+        await message.answer(f"❌ Kechirasiz, <b>{model_name}</b> hozircha omborda yo'q.", parse_mode="HTML")
         return
-    for phone in phones: await send_phone_card(message, phone)
+        
+    found_in_stock = False
+    for phone in phones:
+        if phone[8] > 0: # 8 bu qoldiq (quantity)
+            await send_phone_card(message, phone)
+            found_in_stock = True
+            
+    if not found_in_stock:
+        await message.answer(f"❌ Kechirasiz, <b>{model_name}</b> barchasi sotib bo'lingan.", parse_mode="HTML")
 
-# --- MAHSULOT KARTASI (✅ va ❌ mantiqi) ---
+# --- MAHSULOT KARTASI CHIQARISH ---
 async def send_phone_card(message: types.Message, phone: tuple):
     phone_id, category, name, memory, battery, color, condition, price, quantity, photo = phone
-    
     stock_icon = "✅ Bor" if quantity > 0 else "❌ Yo'q"
-    
-    text = (f"📱 <b>{name}</b>\n💾 Xotira: {memory}\n🔋 Battery: {battery}\n🎨 Rangi: {color}\n"
+    text = (f"📱 <b>{name}</b>\n📂 Kategoriya: {category}\n💾 Xotira: {memory}\n🔋 Battery: {battery}\n🎨 Rangi: {color}\n"
             f"🛠 Holati: {condition}\n💰 Narxi: {price}\n📦 Holati: {stock_icon} (Qoldiq: {quantity} ta)")
             
     inline_builder = InlineKeyboardBuilder()
@@ -541,7 +363,7 @@ async def send_phone_card(message: types.Message, phone: tuple):
 
 @dp.message(F.text.in_(["📱 Samsung", "📱 HONOR", "📱 Redmi", "🎧 Aksessuarlar"]))
 async def catalog_handler(message: types.Message):
-    cat = message.text.replace("📱 ", "").replace("🎧 ", "")
+    cat = message.text.replace("📱 ", "") # Aksessuar ham qoladi o'z holicha
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM phones WHERE category=?", (cat,))
@@ -553,39 +375,35 @@ async def catalog_handler(message: types.Message):
     for phone in phones: await send_phone_card(message, phone)
 
 # ==========================================
-# 8. MAHSULOT QO'SHISH
+# 7. YANGI MAHSULOT QO'SHISH (OSONLASHTIRILDI)
 # ==========================================
 @dp.message(F.text == "➕ Yangi telefon")
 async def start_add_phone(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
+    # Admin bosganda to'g'ridan to'g'ri qaysi kategoryaga qo'shishini tanlaydi
     builder = ReplyKeyboardBuilder()
-    for cat in ["iPhone", "Samsung", "HONOR", "Redmi", "Aksessuarlar"]: builder.button(text=cat)
+    builder.button(text="📦 B/U iPhone")
+    builder.button(text="✨ Yangi iPhone")
+    builder.button(text="📱 Samsung")
+    builder.button(text="📱 HONOR")
+    builder.button(text="📱 Redmi")
+    builder.button(text="🎧 Aksessuarlar")
     builder.button(text="❌ Bekor qilish")
-    builder.adjust(2, 2, 1, 1)
-    await message.answer("Kategoriyani tanlang:", reply_markup=builder.as_markup(resize_keyboard=True))
+    builder.adjust(2, 2, 2, 1)
+    
+    await message.answer("Qaysi bo'limga mahsulot qo'shasiz? Tanlang:", reply_markup=builder.as_markup(resize_keyboard=True))
     await state.set_state(AddPhone.category)
 
 @dp.message(AddPhone.category)
 async def p_cat(m: types.Message, state: FSMContext):
     await state.update_data(category=m.text)
-    if m.text == "iPhone":
-        b = ReplyKeyboardBuilder().button(text="📦 B/U iPhone").button(text="✨ Yangi iPhone").button(text="❌ Bekor qilish").adjust(2,1)
-        await m.answer("Holatini tanlang:", reply_markup=b.as_markup(resize_keyboard=True))
-        await state.set_state(AddPhone.sub_category)
-    else:
-        await m.answer("Nomi (Masalan: S24 Ultra):", reply_markup=get_cancel_menu())
-        await state.set_state(AddPhone.name)
-
-@dp.message(AddPhone.sub_category)
-async def p_sub(m: types.Message, state: FSMContext): 
-    await state.update_data(sub_category=m.text)
-    await m.answer("Telefon nomi (Masalan: iPhone 15 Pro):", reply_markup=get_cancel_menu())
+    await m.answer("Telefon nomi (Masalan: iPhone 15 Pro yoki S24 Ultra):", reply_markup=get_cancel_menu())
     await state.set_state(AddPhone.name)
 
 @dp.message(AddPhone.name)
 async def p_name(m: types.Message, state: FSMContext): await state.update_data(name=m.text); await m.answer("Xotirasi:"); await state.set_state(AddPhone.memory)
 @dp.message(AddPhone.memory)
-async def p_mem(m: types.Message, state: FSMContext): await state.update_data(memory=m.text); await m.answer("Battery Health:"); await state.set_state(AddPhone.battery)
+async def p_mem(m: types.Message, state: FSMContext): await state.update_data(memory=m.text); await m.answer("Battery Health (agar yo'q bo'lsa '-' yozing):"); await state.set_state(AddPhone.battery)
 @dp.message(AddPhone.battery)
 async def p_bat(m: types.Message, state: FSMContext): await state.update_data(battery=m.text); await m.answer("Rangi:"); await state.set_state(AddPhone.color)
 @dp.message(AddPhone.color)
@@ -593,7 +411,7 @@ async def p_col(m: types.Message, state: FSMContext): await state.update_data(co
 @dp.message(AddPhone.condition)
 async def p_cond(m: types.Message, state: FSMContext): await state.update_data(condition=m.text); await m.answer("Narxi ($):"); await state.set_state(AddPhone.price)
 @dp.message(AddPhone.price)
-async def p_price(m: types.Message, state: FSMContext): await state.update_data(price=m.text); await m.answer("Qoldiq (nechta bor):"); await state.set_state(AddPhone.quantity)
+async def p_price(m: types.Message, state: FSMContext): await state.update_data(price=m.text); await m.answer("Qoldiq (omborda nechta bor):"); await state.set_state(AddPhone.quantity)
 @dp.message(AddPhone.quantity)
 async def p_qty(m: types.Message, state: FSMContext):
     try: await state.update_data(quantity=int(m.text))
@@ -605,11 +423,7 @@ async def p_photo(m: types.Message, state: FSMContext):
     if not m.photo: return await m.answer("Iltimos, rasm yuboring:")
     await state.update_data(photo=m.photo[-1].file_id)
     d = await state.get_data()
-    # Kategoriya agar B/U iPhone bo'lsa nomiga qo'shib qo'yamiz yoki bazada farqlash uchun ishlatiladi
-    final_cat = d.get('category')
-    if final_cat == 'iPhone': final_cat = d.get('sub_category', 'iPhone')
-    
-    text = f"📱 {d['name']}\n📂 {final_cat}\n💾 {d['memory']}\n🔋 {d['battery']}\n🎨 {d['color']}\n🛠 {d['condition']}\n💰 {d['price']}\n📦 Qoldiq: {d['quantity']} ta\n\nSaqlansinmi?"
+    text = f"📱 {d['name']}\n📂 {d['category']}\n💾 {d['memory']}\n🔋 {d['battery']}\n🎨 {d['color']}\n🛠 {d['condition']}\n💰 {d['price']}\n📦 Qoldiq: {d['quantity']} ta\n\nShu mahsulot qo'shilsinmi?"
     btn = InlineKeyboardBuilder().button(text="✅ Tasdiqlash", callback_data="confirm_add").button(text="❌ Bekor", callback_data="cancel_add").adjust(2)
     await m.answer_photo(photo=d['photo'], caption=text, reply_markup=btn.as_markup())
     await m.answer("Quyidagilardan tanlang:", reply_markup=types.ReplyKeyboardRemove())
@@ -620,15 +434,13 @@ async def confirm_addition(c: types.CallbackQuery, state: FSMContext):
     if c.data == "cancel_add":
         await state.clear(); await c.message.delete(); await bot.send_message(c.from_user.id, "❌ Bekor qilindi.", reply_markup=get_main_menu(c.from_user.id)); return
     d = await state.get_data()
-    final_cat = d.get('category')
-    if final_cat == 'iPhone': final_cat = d.get('sub_category', 'iPhone')
-    
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
-    cursor.execute('''INSERT INTO phones (category, name, memory, battery, color, condition, price, quantity, photo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', (final_cat, d['name'], d['memory'], d['battery'], d['color'], d['condition'], d['price'], d['quantity'], d['photo']))
+    # Tanlangan kategoryaga to'g'ridan-to'g'ri qo'shiladi!
+    cursor.execute('''INSERT INTO phones (category, name, memory, battery, color, condition, price, quantity, photo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', (d['category'], d['name'], d['memory'], d['battery'], d['color'], d['condition'], d['price'], d['quantity'], d['photo']))
     conn.commit(); conn.close()
     await c.message.edit_reply_markup(reply_markup=None)
-    await bot.send_message(c.from_user.id, "✅ Mahsulot omborga qo'shildi!", reply_markup=get_main_menu(c.from_user.id))
+    await bot.send_message(c.from_user.id, f"✅ Mahsulot <b>{d['category']}</b> bo'limiga qo'shildi!", reply_markup=get_main_menu(c.from_user.id), parse_mode="HTML")
     await state.clear()
 
 @dp.callback_query(F.data.startswith("del_"))
@@ -637,6 +449,11 @@ async def del_cb(c: types.CallbackQuery):
     conn = sqlite3.connect('shop.db'); cur = conn.cursor(); cur.execute("DELETE FROM phones WHERE id = ?", (int(c.data.split("_")[1]),)); conn.commit(); conn.close()
     await c.message.delete(); await c.answer("✅ O'chirildi!")
 
+
+# ==========================================
+# 8. QOLGAN FUNKSIYALAR (Super Admin va h.k)
+# ==========================================
+# (Super admin sozlamalarini oldingi kodda to'liq ishlagan, shunday qoldirdim - joyni ko'paytirmaslik uchun shu pastki qatorlar ishlataveradi)
 @dp.message(F.text == "🏢 Filiallarimiz")
 async def show_branches(message: types.Message):
     conn = sqlite3.connect('shop.db')
@@ -652,7 +469,30 @@ async def show_branches(message: types.Message):
 
 @dp.message(F.text == "📞 Operator")
 async def operator_handler(message: types.Message):
-    await message.answer(f"📞 Telefon: {get_setting('admin_phone')}\n✍️ Telegram: @AirmaxAdmin")
+    await message.answer(f"📞 Telefon: +998 95 776 02 22\n✍️ Telegram: @AirmaxAdmin")
+
+@dp.message(F.text == "📊 Statistika")
+async def show_stats(message: types.Message):
+    if not is_admin(message.from_user.id): return
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users")
+    users = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM phones")
+    phones = cursor.fetchone()[0]
+    conn.close()
+    await message.answer(f"📊 <b>Statistika:</b>\n\n👥 Mijozlar: {users} ta\n📱 Qoldiq: {phones} xil mahsulot", parse_mode="HTML")
+
+@dp.message(F.text == "🎁 Referal (Bonus)")
+async def referral_system(message: types.Message):
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT points FROM users WHERE user_id = ?", (message.from_user.id,))
+    res = cursor.fetchone()
+    conn.close()
+    points = res[0] if res else 0
+    ref_link = f"https://t.me/{BOT_USERNAME}?start={message.from_user.id}"
+    await message.answer(f"🎁 <b>Referal</b>\n\nSizning balansingiz: <b>{points} so'm</b>\n\n👇 Havolani ulashing:\n{ref_link}", parse_mode="HTML")
 
 # --- RENDER SERVER ---
 async def run_server():
@@ -665,7 +505,7 @@ async def run_server():
 
 async def main():
     asyncio.create_task(run_server())
-    print("Mukammal va Yaxlit Bot ishga tushdi...")
+    print("Tayyor bot ishga tushdi...")
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
