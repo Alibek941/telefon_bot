@@ -99,9 +99,9 @@ def get_super_admin_menu():
     builder.button(text="📞 Aloqa raqami")
     builder.button(text="📢 Yangilik yuborish")
     builder.button(text="🏢 Filiallarni boshqarish")
-    builder.button(text="🗑 Barcha mahsulotni tozalash")
+    # "🗑 Barcha mahsulotni tozalash" olib tashlandi!
     builder.button(text="🔙 Bosh menyu")
-    builder.adjust(2, 2, 1, 1)
+    builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def get_cancel_menu():
@@ -157,7 +157,7 @@ async def start_handler(message: types.Message, state: FSMContext):
     await message.answer("Assalomu alaykum! Airmax Mobile do'koniga xush kelibsiz.", reply_markup=get_main_menu(user_id))
 
 # ==========================================
-# 🛑 MAHSULOT QO'SHISH (Miyadagi adashishlar olib tashlandi)
+# 🛑 MAHSULOT QO'SHISH VA AVTOMATIK XABAR TARQATISH
 # ==========================================
 @dp.message(F.text == "➕ Mahsulot qo'shish", StateFilter(None))
 async def start_add_phone(message: types.Message, state: FSMContext):
@@ -239,18 +239,50 @@ async def p_photo(m: types.Message, state: FSMContext):
 async def confirm_addition(c: types.CallbackQuery, state: FSMContext):
     if c.data == "cancel_add":
         await state.clear(); await c.message.delete(); await bot.send_message(c.from_user.id, "❌ Bekor qilindi.", reply_markup=get_main_menu(c.from_user.id)); return
+    
     d = await state.get_data()
+    
+    # Bazaga qo'shish
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
     cursor.execute('''INSERT INTO phones (category, name, memory, battery, color, condition, price, quantity, photo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', (d['category'], d['name'], d['memory'], d['battery'], d['color'], d['condition'], d['price'], d['quantity'], d['photo']))
-    conn.commit(); conn.close()
+    conn.commit()
+    
+    # Barcha mijozlarga xabar yuborish uchun ID larni olish
+    cursor.execute("SELECT user_id FROM users")
+    users = cursor.fetchall()
+    conn.close()
+    
     await c.message.edit_reply_markup(reply_markup=None)
-    await bot.send_message(c.from_user.id, f"✅ Mahsulot <b>{d['category']}</b> bo'limiga muvaffaqiyatli qo'shildi!", reply_markup=get_main_menu(c.from_user.id), parse_mode="HTML")
+    await bot.send_message(c.from_user.id, f"✅ Mahsulot <b>{d['category']}</b> bo'limiga muvaffaqiyatli qo'shildi! Mijozlarga SMS yuborilmoqda...", reply_markup=get_main_menu(c.from_user.id), parse_mode="HTML")
+    
+    # Avtomatik hammaga SMS (Broadcast) yuborish qismi
+    notification_text = (
+        f"🚨 <b>YANGI MAHSULOT QO'SHILDI!</b> 🚨\n\n"
+        f"📱 <b>{d['name']}</b>\n"
+        f"📂 Bo'lim: <b>{d['category']}</b>\n"
+        f"💾 Xotira: {d['memory']}\n"
+        f"🔋 Battery: {d['battery']}\n"
+        f"🎨 Rangi: {d['color']}\n"
+        f"🛠 Holati: {d['condition']}\n"
+        f"💰 Narxi: <b>{d['price']}</b>\n\n"
+        f"❗️ <b>Kelishadigan joyi bor</b> ❗️\n\n"
+        f"👉 Ko'rish uchun botga kiring!"
+    )
+    
+    for user in users:
+        u_id = user[0]
+        try:
+            await bot.send_photo(chat_id=u_id, photo=d['photo'], caption=notification_text, parse_mode="HTML")
+            await asyncio.sleep(0.05) # Spamdan himoya
+        except Exception:
+            pass # Agar kimdir botni bloklagan bo'lsa, xato bermay keyingisiga o'tadi
+            
     await state.clear()
 
 
 # ==========================================
-# 6. ASOSIY BO'LIMLAR (StateFilter(None) qo'yildi, xalaqit bermaydi)
+# 6. ASOSIY BO'LIMLAR
 # ==========================================
 @dp.message(F.text == "🔍 Qidiruv", StateFilter(None))
 async def start_search(message: types.Message, state: FSMContext):
@@ -341,7 +373,7 @@ async def process_checkout(message: types.Message, state: FSMContext):
 
 
 # ==========================================
-# 7. IPHONE VA BOSHQALAR (StateFilter(None) orqali adashishdan himoyalangan)
+# 7. IPHONE VA BOSHQALAR KATEGORIYALARI
 # ==========================================
 @dp.message(F.text == "📱 iPhone", StateFilter(None))
 async def iphone_menu(message: types.Message):
@@ -412,7 +444,7 @@ async def send_phone_card(message: types.Message, phone: tuple):
     phone_id, category, name, memory, battery, color, condition, price, quantity, photo = phone
     stock_icon = "✅ Bor" if quantity > 0 else "❌ Yo'q"
     text = (f"📱 <b>{name}</b>\n📂 Bo'lim: {category}\n💾 Xotira: {memory}\n🔋 Battery: {battery}\n🎨 Rangi: {color}\n"
-            f"🛠 Holati: {condition}\n💰 Narxi: {price}\n📦 Holati: {stock_icon} (Qoldiq: {quantity} ta)")
+            f"🛠 Holati: {condition}\n💰 Narxi: {price}\n📦 Holati: {stock_icon} (Qoldiq: {quantity} ta)\n\n❗️ <b>Kelishadigan joyi bor</b> ❗️")
             
     inline_builder = InlineKeyboardBuilder()
     if quantity > 0: inline_builder.button(text="🛒 Savatga qo'shish", callback_data=f"add_cart_{phone_id}")
@@ -474,16 +506,6 @@ async def process_phone(message: types.Message, state: FSMContext):
     update_setting('admin_phone', message.text)
     await state.clear()
     await message.answer("✅ Aloqa raqami saqlandi!", reply_markup=get_super_admin_menu())
-
-@dp.message(F.text == "🗑 Barcha mahsulotni tozalash", StateFilter(None))
-async def clear_all_products(message: types.Message):
-    if message.from_user.id != SUPER_ADMIN_ID: return
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM phones")
-    conn.commit()
-    conn.close()
-    await message.answer("✅ Barcha mahsulotlar o'chirildi!")
 
 @dp.message(F.text == "📢 Yangilik yuborish", StateFilter(None))
 async def start_broadcast(message: types.Message, state: FSMContext):
