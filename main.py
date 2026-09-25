@@ -82,7 +82,6 @@ def get_main_menu(user_id):
     builder.button(text="🎧 Aksessuarlar")
     builder.button(text="🔍 Qidiruv")
     builder.button(text="🛒 Savat")
-    builder.button(text="🎁 Referal (Bonus)")
     builder.button(text="📞 Operator")
     builder.button(text="🏢 Filiallarimiz")
     
@@ -92,7 +91,7 @@ def get_main_menu(user_id):
     if user_id == SUPER_ADMIN_ID:
         builder.button(text="👑 Super Admin Panel")
         
-    builder.adjust(2, 2, 2, 2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2, 1, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def get_super_admin_menu():
@@ -138,21 +137,12 @@ async def start_handler(message: types.Message, state: FSMContext):
         markup = InlineKeyboardBuilder().button(text="Obuna bo'lish", url=f"https://t.me/{channel.replace('@', '')}").as_markup()
         await message.answer(f"Botdan foydalanish uchun {channel} kanaliga obuna bo'ling!", reply_markup=markup)
         return
-
-    args = message.text.split()
-    referrer_id = int(args[1]) if len(args) > 1 and args[1].isdigit() else None
     
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
     cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
-        if referrer_id and referrer_id != user_id:
-            cursor.execute("INSERT INTO users (user_id, referred_by) VALUES (?, ?)", (user_id, referrer_id))
-            cursor.execute("UPDATE users SET points = points + 10000 WHERE user_id = ?", (referrer_id,))
-            try: await bot.send_message(referrer_id, "🎉 Do'stingiz botga kirdi! Sizga 10,000 so'm bonus berildi!")
-            except: pass
-        else:
-            cursor.execute("INSERT INTO users (user_id) VALUES (?)", (user_id,))
+        cursor.execute("INSERT INTO users (user_id) VALUES (?)", (user_id,))
         conn.commit()
     conn.close()
     await message.answer("Assalomu alaykum! Airmax Mobile do'koniga xush kelibsiz.", reply_markup=get_main_menu(user_id))
@@ -180,7 +170,6 @@ async def start_add_phone(message: types.Message, state: FSMContext):
 async def p_cat(m: types.Message, state: FSMContext):
     await state.update_data(category=m.text)
     
-    # ❗️ MUHIM JOYI: Agar B/U yoki Yangi iPhone tanlansa, tayyor modellarni chiqaramiz!
     if m.text in ["📦 B/U iPhone", "✨ Yangi iPhone"]:
         builder = ReplyKeyboardBuilder()
         for model in iphone_models_list:
@@ -189,7 +178,6 @@ async def p_cat(m: types.Message, state: FSMContext):
         builder.adjust(2)
         await m.answer("Qaysi modelni qo'shasiz? Ro'yxatdan tanlang:", reply_markup=builder.as_markup(resize_keyboard=True))
     else:
-        # Boshqa brendlarda qo'lda yozadi
         await m.answer(f"Mahsulot nomi (Masalan: S24 Ultra, to'liq yozing!):", reply_markup=get_cancel_menu())
         
     await state.set_state(AddPhone.name)
@@ -197,7 +185,6 @@ async def p_cat(m: types.Message, state: FSMContext):
 @dp.message(AddPhone.name)
 async def p_name(m: types.Message, state: FSMContext): 
     await state.update_data(name=m.text)
-    # Endi menyuni yo'qotib, faqat bekor qilish tugmasini qoldiramiz
     await m.answer("Xotirasi (Agar aksessuar bo'lsa '-' yozing):", reply_markup=get_cancel_menu())
     await state.set_state(AddPhone.memory)
 
@@ -366,15 +353,12 @@ async def process_checkout(message: types.Message, state: FSMContext):
     cursor = conn.cursor()
     cursor.execute("SELECT p.name, p.price FROM cart c JOIN phones p ON c.phone_id = p.id WHERE c.user_id = ?", (message.from_user.id,))
     items = cursor.fetchall()
-    cursor.execute("SELECT points FROM users WHERE user_id = ?", (message.from_user.id,))
-    points = cursor.fetchone()[0]
     cursor.execute("DELETE FROM cart WHERE user_id = ?", (message.from_user.id,))
-    cursor.execute("UPDATE users SET points = 0 WHERE user_id = ?", (message.from_user.id,))
     conn.commit()
     conn.close()
 
     order = "\n".join([f"▪️ {i[0]} ({i[1]})" for i in items])
-    admin_text = f"🚨 <b>YANGI BUYURTMA!</b>\n👤 Mijoz ID: {message.from_user.id}\n📞 Tel: {message.text}\n🎁 Bonus ishlatildi: {points} so'm\n\n🛒 <b>Mahsulotlar:</b>\n{order}"
+    admin_text = f"🚨 <b>YANGI BUYURTMA!</b>\n👤 Mijoz ID: {message.from_user.id}\n📞 Tel: {message.text}\n\n🛒 <b>Mahsulotlar:</b>\n{order}"
     await bot.send_message(SUPER_ADMIN_ID, admin_text, parse_mode="HTML")
     await state.clear()
     
@@ -571,17 +555,6 @@ async def show_stats(message: types.Message):
     phones = cursor.fetchone()[0]
     conn.close()
     await message.answer(f"📊 <b>Statistika:</b>\n\n👥 Mijozlar: {users} ta\n📱 Qoldiq: {phones} xil mahsulot", parse_mode="HTML")
-
-@dp.message(F.text == "🎁 Referal (Bonus)", StateFilter(None))
-async def referral_system(message: types.Message):
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT points FROM users WHERE user_id = ?", (message.from_user.id,))
-    res = cursor.fetchone()
-    conn.close()
-    points = res[0] if res else 0
-    ref_link = f"https://t.me/{BOT_USERNAME}?start={message.from_user.id}"
-    await message.answer(f"🎁 <b>Referal</b>\n\nSizning balansingiz: <b>{points} so'm</b>\n\n👇 Havolani ulashing:\n{ref_link}", parse_mode="HTML")
 
 async def run_server():
     app = web.Application()
