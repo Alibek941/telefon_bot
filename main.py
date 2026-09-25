@@ -64,6 +64,8 @@ def update_setting(key, value):
 def is_admin(user_id):
     return user_id in STATIC_ADMIN_IDS
 
+iphone_models_list = ["iPhone 11", "iPhone 12", "iPhone 12 Pro", "iPhone 12 Pro Max", "iPhone 13", "iPhone 13 Pro", "iPhone 13 Pro Max", "iPhone 14", "iPhone 14 Pro", "iPhone 14 Pro Max", "iPhone 15", "iPhone 15 Pro", "iPhone 15 Pro Max", "iPhone 16", "iPhone 16 Pro", "iPhone 16 Pro Max", "iPhone 17", "iPhone 17 Pro", "iPhone 17 Pro Max", "iPhone 18 Pro", "iPhone 18 Pro Max"]
+
 class AddPhone(StatesGroup):
     category, name, memory, battery, color, condition, price, quantity, photo, confirm = State(), State(), State(), State(), State(), State(), State(), State(), State(), State()
 class BroadcastNews(StatesGroup): content = State()
@@ -99,7 +101,6 @@ def get_super_admin_menu():
     builder.button(text="📞 Aloqa raqami")
     builder.button(text="📢 Yangilik yuborish")
     builder.button(text="🏢 Filiallarni boshqarish")
-    # "🗑 Barcha mahsulotni tozalash" olib tashlandi!
     builder.button(text="🔙 Bosh menyu")
     builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
@@ -157,7 +158,7 @@ async def start_handler(message: types.Message, state: FSMContext):
     await message.answer("Assalomu alaykum! Airmax Mobile do'koniga xush kelibsiz.", reply_markup=get_main_menu(user_id))
 
 # ==========================================
-# 🛑 MAHSULOT QO'SHISH VA AVTOMATIK XABAR TARQATISH
+# 🛑 MAHSULOT QO'SHISH (IPHONE MODEL TANLASH BILAN)
 # ==========================================
 @dp.message(F.text == "➕ Mahsulot qo'shish", StateFilter(None))
 async def start_add_phone(message: types.Message, state: FSMContext):
@@ -178,13 +179,26 @@ async def start_add_phone(message: types.Message, state: FSMContext):
 @dp.message(AddPhone.category)
 async def p_cat(m: types.Message, state: FSMContext):
     await state.update_data(category=m.text)
-    await m.answer("Mahsulot nomi (Masalan: iPhone 15 Pro, to'liq yozing!):", reply_markup=get_cancel_menu())
+    
+    # ❗️ MUHIM JOYI: Agar B/U yoki Yangi iPhone tanlansa, tayyor modellarni chiqaramiz!
+    if m.text in ["📦 B/U iPhone", "✨ Yangi iPhone"]:
+        builder = ReplyKeyboardBuilder()
+        for model in iphone_models_list:
+            builder.button(text=model)
+        builder.button(text="❌ Bekor qilish")
+        builder.adjust(2)
+        await m.answer("Qaysi modelni qo'shasiz? Ro'yxatdan tanlang:", reply_markup=builder.as_markup(resize_keyboard=True))
+    else:
+        # Boshqa brendlarda qo'lda yozadi
+        await m.answer(f"Mahsulot nomi (Masalan: S24 Ultra, to'liq yozing!):", reply_markup=get_cancel_menu())
+        
     await state.set_state(AddPhone.name)
 
 @dp.message(AddPhone.name)
 async def p_name(m: types.Message, state: FSMContext): 
     await state.update_data(name=m.text)
-    await m.answer("Xotirasi (Agar aksessuar bo'lsa '-' yozing):")
+    # Endi menyuni yo'qotib, faqat bekor qilish tugmasini qoldiramiz
+    await m.answer("Xotirasi (Agar aksessuar bo'lsa '-' yozing):", reply_markup=get_cancel_menu())
     await state.set_state(AddPhone.memory)
 
 @dp.message(AddPhone.memory)
@@ -241,22 +255,18 @@ async def confirm_addition(c: types.CallbackQuery, state: FSMContext):
         await state.clear(); await c.message.delete(); await bot.send_message(c.from_user.id, "❌ Bekor qilindi.", reply_markup=get_main_menu(c.from_user.id)); return
     
     d = await state.get_data()
-    
-    # Bazaga qo'shish
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
     cursor.execute('''INSERT INTO phones (category, name, memory, battery, color, condition, price, quantity, photo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''', (d['category'], d['name'], d['memory'], d['battery'], d['color'], d['condition'], d['price'], d['quantity'], d['photo']))
     conn.commit()
     
-    # Barcha mijozlarga xabar yuborish uchun ID larni olish
     cursor.execute("SELECT user_id FROM users")
     users = cursor.fetchall()
     conn.close()
     
     await c.message.edit_reply_markup(reply_markup=None)
-    await bot.send_message(c.from_user.id, f"✅ Mahsulot <b>{d['category']}</b> bo'limiga muvaffaqiyatli qo'shildi! Mijozlarga SMS yuborilmoqda...", reply_markup=get_main_menu(c.from_user.id), parse_mode="HTML")
+    await bot.send_message(c.from_user.id, f"✅ Mahsulot <b>{d['category']}</b> bo'limiga muvaffaqiyatli qo'shildi! Mijozlarga xabar yuborilmoqda...", reply_markup=get_main_menu(c.from_user.id), parse_mode="HTML")
     
-    # Avtomatik hammaga SMS (Broadcast) yuborish qismi
     notification_text = (
         f"🚨 <b>YANGI MAHSULOT QO'SHILDI!</b> 🚨\n\n"
         f"📱 <b>{d['name']}</b>\n"
@@ -274,9 +284,9 @@ async def confirm_addition(c: types.CallbackQuery, state: FSMContext):
         u_id = user[0]
         try:
             await bot.send_photo(chat_id=u_id, photo=d['photo'], caption=notification_text, parse_mode="HTML")
-            await asyncio.sleep(0.05) # Spamdan himoya
+            await asyncio.sleep(0.05)
         except Exception:
-            pass # Agar kimdir botni bloklagan bo'lsa, xato bermay keyingisiga o'tadi
+            pass 
             
     await state.clear()
 
@@ -383,8 +393,6 @@ async def iphone_menu(message: types.Message):
     builder.button(text="⬅️ Orqaga")
     builder.adjust(2, 1)
     await message.answer("iPhone bo'limini tanladingiz:", reply_markup=builder.as_markup(resize_keyboard=True))
-
-iphone_models_list = ["iPhone 11", "iPhone 12", "iPhone 12 Pro", "iPhone 12 Pro Max", "iPhone 13", "iPhone 13 Pro", "iPhone 13 Pro Max", "iPhone 14", "iPhone 14 Pro", "iPhone 14 Pro Max", "iPhone 15", "iPhone 15 Pro", "iPhone 15 Pro Max", "iPhone 16", "iPhone 16 Pro", "iPhone 16 Pro Max", "iPhone 17", "iPhone 17 Pro", "iPhone 17 Pro Max", "iPhone 18 Pro", "iPhone 18 Pro Max"]
 
 @dp.message(F.text == "📦 B/U iPhone", StateFilter(None))
 async def bu_iphone_models(message: types.Message):
